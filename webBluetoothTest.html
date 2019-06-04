@@ -1,0 +1,138 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>web bluetooth</title>
+</head>
+
+<body>
+<button id="connect" onclick="connect()">接続</button>
+<button id="disconnect" onclick="disconnect()">切断</button>
+<input id="message1" value="あいうえお" />
+<button id="send1" onclick="writeVal1()">送信１</button>
+<input id="message2" value="16777216" />
+<button id="send2" onclick="writeVal2()">送信２</button>
+<button id="read" onclick="readVal()">読み込み</button>
+<div id="text1">(val1)</div>
+<div id="text2">(val2)</div>
+<div id="text3">(val3)</div>
+<div id="sts">status</div>
+
+<script>
+// https://shimz.me/blog/microbit/5456
+var bluetoothDevice;
+var chara1;
+var chara2;
+var chara3;
+
+var SERVICE_UUID         = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
+var CHARACTERISTIC1_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
+var CHARACTERISTIC2_UUID = '20cfa7a2-b074-45a0-8eae-57d1f3fb17fa';
+var CHARACTERISTIC3_UUID = '685419f0-df21-427b-85a9-33253273dcde';
+
+//chibi:bitに接続する
+function connect() {
+  let options = {};
+
+  //options.acceptAllDevices = true;
+
+  options.filters = [
+    {services: [SERVICE_UUID]}, // <- 重要
+    {name: "rwn3ESP32"}
+  ];
+
+  navigator.bluetooth.requestDevice(options)
+  .then(device => {
+    bluetoothDevice = device;
+    console.log("device", device);
+    return device.gatt.connect();
+  })
+  .then(server =>{
+    if (sts) sts.innerHTML = "BLE接続しました。";
+    console.log("server", server);
+    return server.getPrimaryService(SERVICE_UUID);
+  })
+  .then(service => {
+    console.log("service", service)
+    return Promise.all([
+      service.getCharacteristic(CHARACTERISTIC1_UUID)
+        .then(characteristic1 => {
+          console.log("characteristic1", characteristic1);
+          chara1=characteristic1;
+        }),
+      service.getCharacteristic(CHARACTERISTIC2_UUID)
+        .then(characteristic2 => {
+          console.log("characteristic2", characteristic2);
+          chara2=characteristic2;
+        }),
+      service.getCharacteristic(CHARACTERISTIC3_UUID)
+        .then(characteristic3 => {
+          console.log("characteristic3", characteristic3);
+          setNotifications(characteristic3);
+        })
+    ])
+  })
+  .catch(error => {
+    console.log(error);
+  });    
+}
+
+// Notification設定
+const setNotifications = (characteristic) => {
+  characteristic.addEventListener('characteristicvaluechanged', (event) => {
+    const value = event.target.value;
+    const decoder = new TextDecoder('utf-8');
+    const str = decoder.decode(value);
+    if (text3) text3.innerHTML = str;
+  })
+  characteristic.startNotifications();
+}
+
+//chara1に書き込み
+function writeVal1() {
+  if (!bluetoothDevice || !bluetoothDevice.gatt.connected || !chara1) return ;
+  var text = document.querySelector("#message1").value;
+  var arrayBuffe = new TextEncoder().encode(text);
+  chara1.writeValue(arrayBuffe);
+}
+
+//chara2に書き込み
+function writeVal2() {
+  if (!bluetoothDevice || !bluetoothDevice.gatt.connected || !chara2) return ;
+  var text = document.querySelector("#message2").value;
+  var num = parseInt(text);
+  chara2.writeValue(new Uint32Array([num]));
+}
+
+//chara1,2から読み込み
+function readVal() {
+  if (!bluetoothDevice || !bluetoothDevice.gatt.connected || !chara1 || !chara2) return ;
+  chara1.readValue()
+  .then(response => {
+    // データがStringの場合
+    const decoder = new TextDecoder('utf-8');
+    const str = decoder.decode(response);
+    console.log(str);
+    if (text1) text1.innerHTML = str;
+  })
+
+  chara2.readValue()
+  .then(response => {
+    // データがuint32の場合
+    const num = response.getUint8(0)+response.getUint8(1)*256+response.getUint8(2)*65536+response.getUint8(3)*16777216;
+    console.log(num)
+    if (text2) text2.innerHTML = num;
+  })
+
+}
+
+//BEL切断処理
+function disconnect() {
+  if (!bluetoothDevice || !bluetoothDevice.gatt.connected) return ;
+  bluetoothDevice.gatt.disconnect();
+  if (sts) sts.innerHTML = "BLE接続を切断しました。";
+}
+
+</script>
+</body>
+</html>
